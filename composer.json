@@ -1,0 +1,62 @@
+{
+    "name": "alagaccia/mailer-transport",
+    "description": "Custom Laravel mail transport that delivers messages through a mailer HTTP API. Registers the mailer automatically with a configurable name: set MAIL_MAILER and you are done.",
+    "keywords": [
+        "alagaccia",
+        "laravel",
+        "mailer",
+        "transport",
+        "api"
+    ],
+    "homepage": "https://github.com/alagaccia/mailer-transport",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Andrea Lagaccia",
+            "email": "a.lagaccia@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "guzzlehttp/guzzle": "^7.5",
+        "illuminate/http": "^11.0|^12.0|^13.0",
+        "illuminate/mail": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "symfony/mailer": "^7.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0",
+        "pestphp/pest": "^3.7.4",
+        "pestphp/pest-plugin-laravel": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "AndreaLagaccia\\MailerTransport\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "AndreaLagaccia\\MailerTransport\\Tests\\": "tests"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": "@php ./vendor/bin/testbench package:discover --ansi",
+        "test": "vendor/bin/pest"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "AndreaLagaccia\\MailerTransport\\MailerTransportServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
