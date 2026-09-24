@@ -146,3 +146,28 @@ it('keeps the env file and warns when the mailer refuses the settings', function
 
     expect(file_get_contents($this->envDir.'/.env'))->toContain("CUSTOM_MAILER_KEY=chiave-sbagliata\n");
 });
+
+it('proposes the values of the env file, not the cached configuration', function () {
+    config()->set('mailer-transport.webhook.token', 'token-vecchio-in-cache');
+    config()->set('mailer-transport.api_key', 'chiave-vecchia-in-cache');
+
+    file_put_contents($this->envDir.'/.env', implode("\n", [
+        'APP_URL=https://dal-file.test',
+        'CUSTOM_MAILER_HOST=https://mailer.test/api/send',
+        'CUSTOM_MAILER_KEY=chiave-nuova',
+        'CUSTOM_MAILER_WEBHOOK_TOKEN=token-nuovo',
+        'CUSTOM_MAILER_WEBHOOK_SECRET=segreto-nuovo',
+    ])."\n");
+
+    $this->artisan('mailer-transport:install', [
+        '--no-publish' => true,
+        '--no-interaction' => true,
+    ])->assertSuccessful();
+
+    expect(file_get_contents($this->envDir.'/.env'))
+        ->toContain("CUSTOM_MAILER_KEY=chiave-nuova\n")
+        ->toContain("CUSTOM_MAILER_WEBHOOK_TOKEN=token-nuovo\n")
+        ->toContain("CUSTOM_MAILER_WEBHOOK_SECRET=segreto-nuovo\n")
+        ->toContain("CUSTOM_MAILER_WEBHOOK_URL=https://dal-file.test/api/mailer/webhook\n")
+        ->not->toContain('in-cache');
+});

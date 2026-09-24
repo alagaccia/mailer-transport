@@ -5,8 +5,10 @@ namespace AndreaLagaccia\MailerTransport\Console;
 use AndreaLagaccia\MailerTransport\Support\EnvWriter;
 use AndreaLagaccia\MailerTransport\WebhookRegistrar;
 use AndreaLagaccia\MailerTransport\WebhookSettings;
+use Dotenv\Dotenv;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use Throwable;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\text;
@@ -32,6 +34,11 @@ class InstallCommand extends Command
 
     protected $description = 'Publish the configuration and write the mailer and webhook settings to .env';
 
+    /**
+     * @var array<string, string|null>|null
+     */
+    protected ?array $envFile = null;
+
     public function handle(WebhookRegistrar $registrar): int
     {
         if (! $this->option('no-publish')) {
@@ -39,10 +46,10 @@ class InstallCommand extends Command
         }
 
         $name = (string) config('mailer-transport.name', 'custom');
-        $current = WebhookSettings::current();
+        $current = $this->currentSettings();
 
-        $host = $this->answer('host', 'URL del mailer (endpoint di invio)', (string) config('mailer-transport.host'), required: true, env: 'CUSTOM_MAILER_HOST');
-        $key = $this->answer('key', 'Chiave API di questa applicazione sul mailer', (string) config('mailer-transport.api_key'), required: true, env: 'CUSTOM_MAILER_KEY');
+        $host = $this->answer('host', 'URL del mailer (endpoint di invio)', $this->fromEnv('CUSTOM_MAILER_HOST', config('mailer-transport.host')), required: true, env: 'CUSTOM_MAILER_HOST');
+        $key = $this->answer('key', 'Chiave API di questa applicazione sul mailer', $this->fromEnv('CUSTOM_MAILER_KEY', config('mailer-transport.api_key')), required: true, env: 'CUSTOM_MAILER_KEY');
 
         $values = [
             'CUSTOM_MAILER_HOST' => $host,
@@ -76,6 +83,13 @@ class InstallCommand extends Command
 
         (new EnvWriter($this->laravel->environmentFilePath()))->set($values);
 
+        // Con la configurazione in cache (php artisan optimize) i valori
+        // appena scritti non verrebbero letti dall'applicazione: la si
+        // rigenera subito, cosi' non resta nulla da fare a mano.
+        if ($this->laravel->configurationIsCached()) {
+            $this->call('config:cache');
+        }
+
         $this->components->info('Impostazioni scritte in '.$this->laravel->environmentFilePath());
 
         $rows = collect($values)->map(fn (?string $value, string $key) => [$key, $this->mask($key, (string) $value)])->values()->all();
@@ -92,6 +106,64 @@ class InstallCommand extends Command
      * The value of an option, or the answer to a prompt that shows the .env
      * variable it will be written to (the same name the mailer panel shows).
      */
+    /**
+     * The webhook settings to propose: the ones in the .env file, falling
+     * back to the configuration. The .env is read directly because a cached
+     * configuration would still hold the values of the last `optimize`.
+     *
+     * @return array{enabled: bool, path: string, url: string|null, token: string|null, secret: string|null, signature_header: string}
+     */
+    protected function currentSettings(): array
+    {
+        $config = (array) config('mailer-transport.webhook', []);
+
+        $appUrl = $this->fromEnv('APP_URL', '');
+
+        if ($appUrl !== '') {
+            config()->set('app.url', $appUrl);
+        }
+
+        return WebhookSettings::normalize([
+            'enabled' => filter_var($this->fromEnv('CUSTOM_MAILER_WEBHOOK_ENABLED', ($config['enabled'] ?? true) ? 'true' : 'false'), FILTER_VALIDATE_BOOLEAN),
+            'path' => $this->fromEnv('CUSTOM_MAILER_WEBHOOK_PATH', $config['path'] ?? null),
+            'url' => $this->fromEnv('CUSTOM_MAILER_WEBHOOK_URL', $config['url'] ?? null),
+            'token' => $this->fromEnv('CUSTOM_MAILER_WEBHOOK_TOKEN', $config['token'] ?? null),
+            'secret' => $this->fromEnv('CUSTOM_MAILER_WEBHOOK_SECRET', $config['secret'] ?? null),
+            'signature_header' => $this->fromEnv('CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER', $config['signature_header'] ?? null),
+        ]);
+    }
+
+    /**
+     * A variable as written in the .env file, or the fallback when the file
+     * does not define it.
+     */
+    protected function fromEnv(string $key, mixed $fallback): string
+    {
+        $this->envFile ??= $this->readEnvFile();
+
+        return array_key_exists($key, $this->envFile)
+            ? (string) $this->envFile[$key]
+            : (string) $fallback;
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    protected function readEnvFile(): array
+    {
+        $path = $this->laravel->environmentFilePath();
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        try {
+            return Dotenv::parse((string) file_get_contents($path));
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
     /**
      * With --register the settings are saved on the mailer without asking;
      * otherwise the question is put only to an interactive user.
