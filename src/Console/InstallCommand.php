@@ -39,8 +39,8 @@ class InstallCommand extends Command
         $name = (string) config('mailer-transport.name', 'custom');
         $current = WebhookSettings::current();
 
-        $host = $this->answer('host', 'URL del mailer (endpoint di invio)', (string) config('mailer-transport.host'), required: true);
-        $key = $this->answer('key', 'Chiave API di questa applicazione sul mailer', (string) config('mailer-transport.api_key'), required: true);
+        $host = $this->answer('host', 'URL del mailer (endpoint di invio)', (string) config('mailer-transport.host'), required: true, env: 'CUSTOM_MAILER_HOST');
+        $key = $this->answer('key', 'Chiave API di questa applicazione sul mailer', (string) config('mailer-transport.api_key'), required: true, env: 'CUSTOM_MAILER_KEY');
 
         $values = [
             'CUSTOM_MAILER_HOST' => $host,
@@ -53,16 +53,16 @@ class InstallCommand extends Command
         $values['CUSTOM_MAILER_WEBHOOK_ENABLED'] = $webhookEnabled ? 'true' : 'false';
 
         if ($webhookEnabled) {
-            $secret = $this->answer('webhook-secret', 'Segreto HMAC con cui il mailer firma le notifiche (vuoto = generane uno)', (string) $current['secret']);
+            $secret = $this->answer('webhook-secret', 'Segreto HMAC con cui firmare le notifiche (vuoto = generane uno)', (string) $current['secret'], env: 'CUSTOM_MAILER_WEBHOOK_SECRET');
 
             if ($secret === '' || $secret === 'generate') {
                 $secret = Str::random(64);
             }
 
             $values['CUSTOM_MAILER_WEBHOOK_SECRET'] = $secret;
-            $values['CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER'] = $this->answer('webhook-header', 'Intestazione che porta la firma', $current['signature_header'], required: true);
-            $values['CUSTOM_MAILER_WEBHOOK_TOKEN'] = $this->answer('webhook-token', 'Token di autenticazione aggiuntivo (vuoto = nessuno)', (string) $current['token']);
-            $values['CUSTOM_MAILER_WEBHOOK_URL'] = $this->answer('webhook-url', 'URL pubblico del webhook (vuoto = APP_URL + '.$current['path'].')', (string) $current['url']);
+            $values['CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER'] = $this->answer('webhook-header', 'Intestazione che porta la firma', $current['signature_header'], required: true, env: 'CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER');
+            $values['CUSTOM_MAILER_WEBHOOK_TOKEN'] = $this->answer('webhook-token', 'Token di autenticazione aggiuntivo (vuoto = nessuno)', (string) $current['token'], env: 'CUSTOM_MAILER_WEBHOOK_TOKEN');
+            $values['CUSTOM_MAILER_WEBHOOK_URL'] = $this->answer('webhook-url', 'URL pubblico del webhook (vuoto = APP_URL + '.$current['path'].')', (string) $current['url'], env: 'CUSTOM_MAILER_WEBHOOK_URL');
         }
 
         if ($this->option('default-mailer') || ($this->input->isInteractive() && confirm("Impostare MAIL_MAILER={$name}?", config('mail.default') === $name))) {
@@ -89,7 +89,11 @@ class InstallCommand extends Command
         return self::SUCCESS;
     }
 
-    protected function answer(string $option, string $question, string $default, bool $required = false): string
+    /**
+     * The value of an option, or the answer to a prompt that shows the .env
+     * variable it will be written to (the same name the mailer panel shows).
+     */
+    protected function answer(string $option, string $question, string $default, bool $required = false, string $env = ''): string
     {
         $value = (string) $this->option($option);
 
@@ -101,7 +105,7 @@ class InstallCommand extends Command
             return $default;
         }
 
-        return text(label: $question, default: $default, required: $required);
+        return text(label: $question, default: $default, required: $required, hint: $env);
     }
 
     protected function hasWebhookOptions(): bool
