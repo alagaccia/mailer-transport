@@ -3,6 +3,7 @@
 namespace AndreaLagaccia\MailerTransport;
 
 use AndreaLagaccia\MailerTransport\Console\InstallCommand;
+use AndreaLagaccia\MailerTransport\Console\RegisterWebhookCommand;
 use AndreaLagaccia\MailerTransport\Listeners\AttachMessageUuid;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Event;
@@ -23,7 +24,7 @@ class MailerTransportServiceProvider extends ServiceProvider
         ], 'mailer-transport-config');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([InstallCommand::class]);
+            $this->commands([InstallCommand::class, RegisterWebhookCommand::class]);
         }
 
         $config = $this->app['config'];

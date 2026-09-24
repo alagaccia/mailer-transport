@@ -18,7 +18,9 @@ The quickest way is the install command, which publishes the config file and wri
 php artisan mailer-transport:install
 ```
 
-Every value can also be given as an option for unattended setups (`--host`, `--key`, `--webhook-secret=generate`, `--webhook-token`, `--webhook-header`, `--webhook-url`, `--no-webhook`, `--default-mailer`, `--no-publish`).
+At the end it offers to save the same webhook settings on the mailer's *Settings > Webhook* page too (`PUT /api/webhook`, authenticated with the API key just given), so the mailer is configured in one go. Every value can also be given as an option for unattended setups (`--host`, `--key`, `--webhook-secret=generate`, `--webhook-token`, `--webhook-header`, `--webhook-url`, `--no-webhook`, `--register`, `--default-mailer`, `--no-publish`).
+
+After editing the `CUSTOM_MAILER_WEBHOOK_*` variables by hand, `php artisan mailer-transport:register-webhook` saves them on the mailer again (`--remove` clears them there).
 
 Or set the variables in your `.env` by hand:
 
@@ -38,8 +40,9 @@ CUSTOM_MAILER_WEBHOOK_SECRET=a-long-random-string
 CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER=X-Signature
 # Optional: extra token, sent back as X-API-KEY / Bearer
 CUSTOM_MAILER_WEBHOOK_TOKEN=
-# Optional: public URL of the endpoint (default APP_URL + path) and its path
-CUSTOM_MAILER_WEBHOOK_URL=
+# Public URL of the endpoint announced to the mailer (empty = APP_URL + path;
+# the install command writes the resolved value) and its path
+CUSTOM_MAILER_WEBHOOK_URL=https://app.example.com/api/mailer/webhook
 CUSTOM_MAILER_WEBHOOK_PATH=api/mailer/webhook
 ```
 
