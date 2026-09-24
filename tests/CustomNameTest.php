@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 
 it('registers the mailer under the customized name', function () {
-    expect(config('mail.mailers.mio-mailer'))->toBe([
+    expect(config('mail.mailers.mio-mailer'))->toMatchArray([
         'transport' => 'mio-mailer',
         'host' => 'https://mailer.test/api/send',
         'api_key' => 'test-api-key',

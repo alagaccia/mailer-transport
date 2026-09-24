@@ -2,6 +2,7 @@
 
 namespace AndreaLagaccia\MailerTransport;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -17,11 +18,15 @@ class ApiTransport extends AbstractTransport
      */
     public const UUID_HEADER = 'X-Metadata-uuid';
 
+    /**
+     * @param  array<string, mixed>  $webhook  Raw `mailer-transport.webhook` configuration.
+     */
     public function __construct(
         protected string $host,
         protected string $apiKey,
         public bool $sync = false,
         protected string $name = 'custom',
+        protected array $webhook = [],
     ) {
         parent::__construct();
     }
@@ -30,12 +35,56 @@ class ApiTransport extends AbstractTransport
     {
         $email = MessageConverter::toEmail($message->getOriginalMessage());
 
-        $recipients = array_map(
+        $response = $this->post($this->buildPayload($email));
+
+        if ($response->failed()) {
+            $this->handleFailedResponse($response);
+        }
+    }
+
+    /**
+     * The JSON body sent to the mailer. Subclasses extend it (or drop keys)
+     * by overriding this method instead of duplicating doSend().
+     *
+     * @return array<string, mixed>
+     */
+    protected function buildPayload(Email $email): array
+    {
+        $payload = [
+            'uuid' => $this->resolveUuid($email),
+            'to' => $this->recipients($email),
+            'subject' => $email->getSubject(),
+            'body' => $email->getHtmlBody() ?: $email->getTextBody(),
+            'sync' => $this->sync,
+        ];
+
+        $attachments = $this->attachments($email);
+
+        if ($attachments !== []) {
+            $payload['attachments'] = $attachments;
+        }
+
+        return array_merge($payload, $this->webhookPayload());
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function recipients(Email $email): array
+    {
+        return array_map(
             static fn ($address) => $address->getAddress(),
             $email->getTo()
         );
+    }
 
+    /**
+     * @return list<array{filename: string|null, content: string, mime: string}>
+     */
+    protected function attachments(Email $email): array
+    {
         $attachments = [];
+
         foreach ($email->getAttachments() as $attachment) {
             $attachments[] = [
                 'filename' => $attachment->getFilename(),
@@ -44,27 +93,35 @@ class ApiTransport extends AbstractTransport
             ];
         }
 
-        $payload = [
-            'uuid' => $this->resolveUuid($email),
-            'to' => $recipients,
-            'subject' => $email->getSubject(),
-            'body' => $email->getHtmlBody() ?: $email->getTextBody(),
-            'sync' => $this->sync,
-        ];
+        return $attachments;
+    }
 
-        if (! empty($attachments)) {
-            $payload['attachments'] = $attachments;
-        }
+    /**
+     * URL and credentials of this application's webhook, so the mailer can
+     * report the outcome without any configuration on its own panel.
+     *
+     * @return array<string, string>
+     */
+    protected function webhookPayload(): array
+    {
+        return WebhookSettings::payload(WebhookSettings::normalize($this->webhook));
+    }
 
-        $response = Http::withHeaders([
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function post(array $payload): Response
+    {
+        return Http::withHeaders([
             'X-API-KEY' => $this->apiKey,
             'Accept' => 'application/json',
             'Content-Type' => 'application/json',
         ])->post($this->host, $payload);
+    }
 
-        if ($response->failed()) {
-            throw new TransportException('Errore invio tramite Mailer API: '.$response->body());
-        }
+    protected function handleFailedResponse(Response $response): never
+    {
+        throw new TransportException('Errore invio tramite Mailer API: '.$response->body());
     }
 
     /**

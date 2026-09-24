@@ -2,6 +2,10 @@
 
 namespace AndreaLagaccia\MailerTransport;
 
+use AndreaLagaccia\MailerTransport\Console\InstallCommand;
+use AndreaLagaccia\MailerTransport\Listeners\AttachMessageUuid;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ServiceProvider;
 
@@ -18,6 +22,10 @@ class MailerTransportServiceProvider extends ServiceProvider
             __DIR__.'/../config/mailer-transport.php' => config_path('mailer-transport.php'),
         ], 'mailer-transport-config');
 
+        if ($this->app->runningInConsole()) {
+            $this->commands([InstallCommand::class]);
+        }
+
         $config = $this->app['config'];
         $name = $config->get('mailer-transport.name');
 
@@ -27,6 +35,7 @@ class MailerTransportServiceProvider extends ServiceProvider
                 'host' => $config->get('mailer-transport.host'),
                 'api_key' => $config->get('mailer-transport.api_key'),
                 'sync' => $config->get('mailer-transport.sync', false),
+                'webhook' => $config->get('mailer-transport.webhook', []),
             ],
             $config->get("mail.mailers.{$name}", [])
         ));
@@ -37,7 +46,14 @@ class MailerTransportServiceProvider extends ServiceProvider
                 $config['api_key'],
                 $config['sync'] ?? false,
                 $config['transport'],
+                $config['webhook'] ?? [],
             );
         });
+
+        Event::listen(MessageSending::class, AttachMessageUuid::class);
+
+        if (WebhookSettings::current()['enabled']) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/webhook.php');
+        }
     }
 }
