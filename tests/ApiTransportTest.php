@@ -1,8 +1,12 @@
 <?php
 
 use AndreaLagaccia\MailerTransport\ApiTransport;
+use AndreaLagaccia\MailerTransport\Mail\HasMailMetadata;
 use Illuminate\Http\Client\Request;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -134,4 +138,72 @@ it('preserves an uuid already set on the message', function () {
     });
 
     Http::assertSent(fn (Request $request) => $request['uuid'] === 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+});
+
+it('lets the message ask for a synchronous delivery', function () {
+    Http::fake();
+
+    Mail::raw('Messaggio urgente', function ($message) {
+        $message->to('destinatario@example.com')->subject('Sync per messaggio');
+        $message->getHeaders()->addTextHeader(ApiTransport::SYNC_HEADER, 'true');
+    });
+
+    Http::assertSent(fn (Request $request) => $request['sync'] === true);
+});
+
+it('lets the message opt out of the synchronous delivery of the configuration', function () {
+    config()->set('mail.mailers.custom.sync', true);
+    Http::fake();
+
+    Mail::raw('Messaggio accodato', function ($message) {
+        $message->to('destinatario@example.com')->subject('Coda per messaggio');
+        $message->getHeaders()->addTextHeader(ApiTransport::SYNC_HEADER, 'false');
+    });
+
+    Http::assertSent(fn (Request $request) => $request['sync'] === false);
+});
+
+it('sends the sync flag declared by the mailable', function () {
+    Http::fake();
+
+    Mail::to('destinatario@example.com')->send(new class extends Mailable
+    {
+        use HasMailMetadata;
+
+        protected bool $emailSync = true;
+
+        public function envelope(): Envelope
+        {
+            return new Envelope(subject: 'Sync dalla Mailable', metadata: $this->mergeMailMetadata());
+        }
+
+        public function content(): Content
+        {
+            return new Content(htmlString: '<p>Messaggio</p>');
+        }
+    });
+
+    Http::assertSent(fn (Request $request) => $request['subject'] === 'Sync dalla Mailable'
+        && $request['sync'] === true);
+});
+
+it('keeps the sync flag of the configuration when the mailable does not declare one', function () {
+    Http::fake();
+
+    Mail::to('destinatario@example.com')->send(new class extends Mailable
+    {
+        use HasMailMetadata;
+
+        public function envelope(): Envelope
+        {
+            return new Envelope(subject: 'Senza sync', metadata: $this->mergeMailMetadata());
+        }
+
+        public function content(): Content
+        {
+            return new Content(htmlString: '<p>Messaggio</p>');
+        }
+    });
+
+    Http::assertSent(fn (Request $request) => $request['sync'] === false);
 });

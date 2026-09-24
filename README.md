@@ -31,7 +31,8 @@ CUSTOM_MAILER_HOST=https://mailer.example.com/api/send
 CUSTOM_MAILER_KEY=your-api-key
 # Optional: mailer/transport name (default "custom")
 CUSTOM_MAILER_NAME=custom
-# Optional: process the message synchronously on the mailer (default false)
+# Optional: process the message synchronously on the mailer (default false);
+# a single message can override it, see "Synchronous delivery per email type"
 CUSTOM_MAILER_SYNC=false
 
 # Webhook with which the mailer reports the outcome of every email
@@ -98,6 +99,29 @@ public function envelope(): Envelope
         metadata: $this->mergeMailMetadata(['user_id' => $this->user->id]),
     );
 }
+```
+
+## Synchronous delivery per email type
+
+`CUSTOM_MAILER_SYNC` sets the default for every message. A single message overrides it with the `X-Metadata-sync` header (`ApiTransport::SYNC_HEADER`, `true`/`false`), so the emails that must arrive at once (a password reset, an OTP…) skip the mailer queue while the others keep using it.
+
+A Mailable using `HasMailMetadata` declares it with the `$emailSync` property, and `mergeMailMetadata()` adds it to the metadata:
+
+```php
+class PasswordResetMail extends Mailable
+{
+    use HasMailMetadata;
+
+    protected bool $emailSync = true;
+}
+```
+
+A notification sets it on its `MailMessage`:
+
+```php
+return (new MailMessage)
+    ->subject('Reset password')
+    ->metadata('sync', 'true');
 ```
 
 ### Customizing the mailer name

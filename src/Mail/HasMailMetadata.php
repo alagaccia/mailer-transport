@@ -12,7 +12,9 @@ use ReflectionNamedType;
  * listener can log the email with its type and the model it is about.
  *
  * Every metadata key travels as an `X-Metadata-{key}` header; read them with
- * `$message->getHeaders()->get('X-Metadata-email_type')` and so on.
+ * `$message->getHeaders()->get('X-Metadata-email_type')` and so on. The
+ * `sync` key is also read by ApiTransport (SYNC_HEADER) to ask the mailer
+ * for an immediate delivery of this type of email.
  */
 trait HasMailMetadata
 {
@@ -97,8 +99,22 @@ trait HasMailMetadata
     }
 
     /**
-     * Adds `email_type`, `emailable_type` and `emailable_id` to the given
-     * metadata, without overriding keys already set.
+     * Whether the mailer must deliver this email synchronously: the
+     * `$emailSync` property when declared, otherwise null (the `sync` of the
+     * mailer configuration applies).
+     */
+    public function resolveEmailSync(): ?bool
+    {
+        if (property_exists($this, 'emailSync') && is_bool($this->emailSync)) {
+            return $this->emailSync;
+        }
+
+        return null;
+    }
+
+    /**
+     * Adds `email_type`, `emailable_type`, `emailable_id` and, when declared,
+     * `sync` to the given metadata, without overriding keys already set.
      *
      * @param  array<string, mixed>  $metadata
      * @return array<string, mixed>
@@ -106,6 +122,12 @@ trait HasMailMetadata
     protected function mergeMailMetadata(array $metadata = []): array
     {
         $metadata['email_type'] ??= $this->resolveEmailTypeCode();
+
+        $sync = $this->resolveEmailSync();
+
+        if ($sync !== null) {
+            $metadata['sync'] ??= $sync ? 'true' : 'false';
+        }
 
         $emailable = $this->resolveEmailable();
 

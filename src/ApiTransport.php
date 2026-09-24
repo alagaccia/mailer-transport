@@ -19,6 +19,12 @@ class ApiTransport extends AbstractTransport
     public const UUID_HEADER = 'X-Metadata-uuid';
 
     /**
+     * Header con cui un singolo messaggio sceglie l'invio sincrono sul
+     * mailer, sovrascrivendo il `sync` della configurazione.
+     */
+    public const SYNC_HEADER = 'X-Metadata-sync';
+
+    /**
      * @param  array<string, mixed>  $webhook  Raw `mailer-transport.webhook` configuration.
      */
     public function __construct(
@@ -55,7 +61,7 @@ class ApiTransport extends AbstractTransport
             'to' => $this->recipients($email),
             'subject' => $email->getSubject(),
             'body' => $email->getHtmlBody() ?: $email->getTextBody(),
-            'sync' => $this->sync,
+            'sync' => $this->resolveSync($email),
         ];
 
         $attachments = $this->attachments($email);
@@ -142,6 +148,21 @@ class ApiTransport extends AbstractTransport
         $headers->addTextHeader(self::UUID_HEADER, $uuid);
 
         return $uuid;
+    }
+
+    /**
+     * Il `sync` del messaggio quando lo dichiara (SYNC_HEADER), altrimenti
+     * quello della configurazione del mailer.
+     */
+    protected function resolveSync(Email $email): bool
+    {
+        $header = $email->getHeaders()->get(self::SYNC_HEADER);
+
+        if ($header === null) {
+            return $this->sync;
+        }
+
+        return filter_var($header->getBodyAsString(), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? $this->sync;
     }
 
     public function __toString(): string
