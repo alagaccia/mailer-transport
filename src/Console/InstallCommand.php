@@ -8,6 +8,7 @@ use AndreaLagaccia\MailerTransport\WebhookSettings;
 use Dotenv\Dotenv;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
 use function Laravel\Prompts\confirm;
@@ -24,7 +25,7 @@ class InstallCommand extends Command
         {--host= : URL of the mailer send endpoint (CUSTOM_MAILER_HOST)}
         {--key= : API key of this application on the mailer (CUSTOM_MAILER_KEY)}
         {--webhook-url= : public URL of the webhook (default APP_URL + path)}
-        {--webhook-token= : token the mailer sends back as X-API-KEY / Bearer}
+        {--webhook-token= : token the mailer sends back as X-API-KEY / Bearer ("generate" to create one)}
         {--webhook-secret= : HMAC secret used to sign the notifications ("generate" to create one)}
         {--webhook-header= : header carrying the signature (default X-Signature)}
         {--no-webhook : disable the webhook}
@@ -64,13 +65,10 @@ class InstallCommand extends Command
         if ($webhookEnabled) {
             $secret = $this->answer('webhook-secret', 'Segreto HMAC con cui firmare le notifiche (vuoto = generane uno)', (string) $current['secret'], env: 'CUSTOM_MAILER_WEBHOOK_SECRET');
 
-            if ($secret === '' || $secret === 'generate') {
-                $secret = Str::random(64);
-            }
-
-            $values['CUSTOM_MAILER_WEBHOOK_SECRET'] = $secret;
+            // Il segreto serve sempre: vuoto equivale a chiederne uno nuovo.
+            $values['CUSTOM_MAILER_WEBHOOK_SECRET'] = $this->generated($secret === '' ? 'generate' : $secret);
             $values['CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER'] = $this->answer('webhook-header', 'Intestazione che porta la firma', $current['signature_header'], required: true, env: 'CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER');
-            $values['CUSTOM_MAILER_WEBHOOK_TOKEN'] = $this->answer('webhook-token', 'Token di autenticazione aggiuntivo (vuoto = nessuno)', (string) $current['token'], env: 'CUSTOM_MAILER_WEBHOOK_TOKEN');
+            $values['CUSTOM_MAILER_WEBHOOK_TOKEN'] = $this->generated($this->answer('webhook-token', 'Token di autenticazione aggiuntivo (vuoto = nessuno, "generate" per generarne uno)', (string) $current['token'], env: 'CUSTOM_MAILER_WEBHOOK_TOKEN'));
             // Si propone l'URL gia' configurato, altrimenti quello che si
             // ricava da APP_URL + path, e lo si scrive comunque nel .env:
             // cosi' si vede a colpo d'occhio dove il mailer richiamera'.
@@ -81,25 +79,74 @@ class InstallCommand extends Command
             $values['MAIL_MAILER'] = $name;
         }
 
-        (new EnvWriter($this->laravel->environmentFilePath()))->set($values);
+        $written = $this->writeEnv($values);
 
         // Con la configurazione in cache (php artisan optimize) i valori
         // appena scritti non verrebbero letti dall'applicazione: la si
         // rigenera subito, cosi' non resta nulla da fare a mano.
-        if ($this->laravel->configurationIsCached()) {
+        if ($written && $this->laravel->configurationIsCached()) {
             $this->call('config:cache');
         }
-
-        $this->components->info('Impostazioni scritte in '.$this->laravel->environmentFilePath());
-
-        $rows = collect($values)->map(fn (?string $value, string $key) => [$key, $this->mask($key, (string) $value)])->values()->all();
-        $this->table(['Chiave', 'Valore'], $rows);
 
         if ($this->shouldRegister($host)) {
             $this->registerOnMailer($registrar, $host, $key, $webhookEnabled, $current['path'], $values);
         }
 
-        return self::SUCCESS;
+        return $written ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Writes the settings to the .env file, masking the secrets in the recap.
+     *
+     * When the file cannot be written the command does not stop there: it
+     * shows the whole block with the values in clear, so it can be copied by
+     * hand. This is the normal case inside a container, where the image has
+     * no .env at all (the configuration arrives from the environment) and the
+     * application directory belongs to root while PHP runs as another user.
+     *
+     * @param  array<string, string|null>  $values
+     * @return bool whether the file was written
+     */
+    protected function writeEnv(array $values): bool
+    {
+        $path = $this->laravel->environmentFilePath();
+
+        try {
+            (new EnvWriter($path))->set($values);
+        } catch (Throwable $e) {
+            $this->components->warn('Impostazioni non scritte nel file .env.');
+            // Su una riga a parte: i componenti della console vanno a capo da
+            // soli e spezzerebbero il motivo a meta'.
+            $this->line('  '.$e->getMessage());
+            $this->newLine();
+            $this->line('Copia queste righe nel .env dell\'applicazione:');
+            $this->newLine();
+            // Una riga per volta e senza formattazione: i valori sono da
+            // incollare come sono.
+            foreach (EnvWriter::lines($values) as $line) {
+                $this->output->writeln($line, OutputInterface::OUTPUT_RAW);
+            }
+            $this->newLine();
+            $this->line('  Poi rigenera la configurazione in cache: php artisan optimize');
+
+            return false;
+        }
+
+        $this->components->info('Impostazioni scritte in '.$path);
+
+        $rows = collect($values)->map(fn (?string $value, string $key) => [$key, $this->mask($key, (string) $value)])->values()->all();
+        $this->table(['Chiave', 'Valore'], $rows);
+
+        return true;
+    }
+
+    /**
+     * A random value in place of the `generate` keyword, so neither the
+     * secret nor the token has to be invented outside the command.
+     */
+    protected function generated(string $value): string
+    {
+        return $value === 'generate' ? Str::random(64) : $value;
     }
 
     /**

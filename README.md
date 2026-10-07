@@ -18,7 +18,9 @@ The quickest way is the install command, which publishes the config file and wri
 php artisan mailer-transport:install
 ```
 
-At the end it offers to save the same webhook settings on the mailer's *Settings > Webhook* page too (`PUT /api/webhook`, authenticated with the API key just given), so the mailer is configured in one go. Every value can also be given as an option for unattended setups (`--host`, `--key`, `--webhook-secret=generate`, `--webhook-token`, `--webhook-header`, `--webhook-url`, `--no-webhook`, `--register`, `--default-mailer`, `--no-publish`).
+At the end it offers to save the same webhook settings on the mailer's *Settings > Webhook* page too (`PUT /api/webhook`, authenticated with the API key just given), so the mailer is configured in one go. Every value can also be given as an option for unattended setups (`--host`, `--key`, `--webhook-secret=generate`, `--webhook-token=generate`, `--webhook-header`, `--webhook-url`, `--no-webhook`, `--register`, `--default-mailer`, `--no-publish`).
+
+When the `.env` file cannot be written the command does not leave you with a PHP error: it prints the whole block, with the secrets in clear, ready to be pasted by hand, and exits with a non-zero status. That is the normal case inside a container, where the image ships no `.env` (the configuration comes from the environment) and the application directory belongs to root while PHP runs as another user.
 
 After editing the `CUSTOM_MAILER_WEBHOOK_*` variables by hand, `php artisan mailer-transport:register-webhook` saves them on the mailer again (`--remove` clears them there).
 

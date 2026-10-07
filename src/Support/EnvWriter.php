@@ -20,11 +20,49 @@ class EnvWriter
         $content = file_exists($this->path) ? (string) file_get_contents($this->path) : '';
 
         foreach ($values as $key => $value) {
-            $content = $this->setKey($content, $key, $this->quote($value));
+            $content = $this->setKey($content, $key, self::quote($value));
         }
 
-        if (file_put_contents($this->path, $content) === false) {
+        $this->guardWritable();
+
+        if (@file_put_contents($this->path, $content) === false) {
             throw new RuntimeException("Impossibile scrivere {$this->path}");
+        }
+    }
+
+    /**
+     * The same lines `set()` would write, to be shown when the file cannot be
+     * written and the block has to be copied by hand.
+     *
+     * @param  array<string, string|null>  $values
+     * @return list<string>
+     */
+    public static function lines(array $values): array
+    {
+        $lines = [];
+
+        foreach ($values as $key => $value) {
+            $lines[] = $key.'='.self::quote($value);
+        }
+
+        return $lines;
+    }
+
+    /**
+     * A file that does not exist yet is created in its directory, so it is
+     * that directory that has to be writable. Checking it beforehand turns
+     * what would be a PHP warning into a reason the command can explain:
+     * inside a container the application directory usually belongs to root
+     * while PHP runs as another user, and the .env is not there at all.
+     */
+    protected function guardWritable(): void
+    {
+        $writable = file_exists($this->path)
+            ? is_writable($this->path)
+            : is_writable(dirname($this->path));
+
+        if (! $writable) {
+            throw new RuntimeException("Impossibile scrivere {$this->path}: permesso negato.");
         }
     }
 
@@ -44,7 +82,7 @@ class EnvWriter
         return $content.$line."\n";
     }
 
-    protected function quote(?string $value): string
+    protected static function quote(?string $value): string
     {
         $value ??= '';
 

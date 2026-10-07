@@ -171,3 +171,60 @@ it('proposes the values of the env file, not the cached configuration', function
         ->toContain("CUSTOM_MAILER_WEBHOOK_URL=https://dal-file.test/api/mailer/webhook\n")
         ->not->toContain('in-cache');
 });
+
+it('shows the block to copy by hand when the env file cannot be written', function () {
+    // Il caso dei container: nell'immagine il .env non c'e' e la cartella
+    // dell'applicazione non appartiene all'utente con cui gira PHP.
+    $this->app->useEnvironmentPath($this->envDir.'/non-scrivibile');
+
+    $this->artisan('mailer-transport:install', [
+        '--host' => 'https://mailer.test/api/send',
+        '--key' => 'chiave-api',
+        '--webhook-secret' => 'segreto',
+        '--webhook-token' => 'token di prova',
+        '--webhook-url' => 'https://gestionale.test/api/mailer/webhook',
+        '--default-mailer' => true,
+        '--no-publish' => true,
+        '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('permesso negato')
+        ->expectsOutputToContain('CUSTOM_MAILER_HOST=https://mailer.test/api/send')
+        ->expectsOutputToContain('CUSTOM_MAILER_KEY=chiave-api')
+        ->expectsOutputToContain('CUSTOM_MAILER_WEBHOOK_ENABLED=true')
+        ->expectsOutputToContain('CUSTOM_MAILER_WEBHOOK_SECRET=segreto')
+        ->expectsOutputToContain('CUSTOM_MAILER_WEBHOOK_SIGNATURE_HEADER=X-Signature')
+        ->expectsOutputToContain('CUSTOM_MAILER_WEBHOOK_TOKEN="token di prova"')
+        ->expectsOutputToContain('CUSTOM_MAILER_WEBHOOK_URL=https://gestionale.test/api/mailer/webhook')
+        ->expectsOutputToContain('MAIL_MAILER=custom')
+        ->assertFailed();
+});
+
+it('does not mask the secrets of the block to copy by hand', function () {
+    $this->app->useEnvironmentPath($this->envDir.'/non-scrivibile');
+
+    $this->artisan('mailer-transport:install', [
+        '--host' => 'https://mailer.test/api/send',
+        '--key' => 'chiave-api',
+        '--webhook-secret' => 'generate',
+        '--no-publish' => true,
+        '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('CUSTOM_MAILER_WEBHOOK_SECRET=')
+        ->doesntExpectOutputToContain('…')
+        ->assertFailed();
+});
+
+it('generates the webhook token on request', function () {
+    $this->artisan('mailer-transport:install', [
+        '--host' => 'https://mailer.test/api/send',
+        '--key' => 'chiave-api',
+        '--webhook-secret' => 'segreto',
+        '--webhook-token' => 'generate',
+        '--no-publish' => true,
+        '--no-interaction' => true,
+    ])->assertSuccessful();
+
+    expect(file_get_contents($this->envDir.'/.env'))
+        ->toMatch('/^CUSTOM_MAILER_WEBHOOK_TOKEN=[A-Za-z0-9]{64}$/m')
+        ->toContain("CUSTOM_MAILER_WEBHOOK_SECRET=segreto\n");
+});
